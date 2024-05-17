@@ -193,4 +193,8 @@ Blog:
 - the coprime version of the golden ratio is real close to the actual thing. but drift.
 - show where the sequnces diverge! lil bit of drift due to rounding to integer, but we want that cause it's a coprime generator.
 - mention that you are not going to be analzying the quality of the sequence, but you can see it's very, very similar to the pure golden ratio one
+
+find marc reynolds post about golden ratio integer LDS thing.
+and link this too: ttps://mastodon.gamedev.place/@demofox/112452866510781822
+
 */
