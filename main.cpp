@@ -5,30 +5,35 @@
 #include <random>
 #include <vector>
 #include <array>
+#include <direct.h>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb/stb_image_write.h"
 
 typedef unsigned int uint;
 
-typedef std::array<float, 2> float2;
 typedef std::array<uint, 2> uint2;
+
+typedef std::array<float, 2> float2;
+typedef std::array<float, 3> float3;
 
 // -1 means non deterministic
 #define SEED() 0
 
-#define DO_TEST_COPRIMES() false
+#define DO_TEST_COPRIMES() true
 // When looking for coprimes near the golden ratio integer, this is the range looked at
 static const uint c_coprimeTestStart = 2;
 static const uint c_coprimeTestEnd = 1000;
 
-#define DO_TEST_1D() false
-#define PRINT_NUMBERS_1D() true
-static const uint c_itemCounts1D[] = { 10, 37, 64, 100 };// , 1000, 1337, 1546 };
+#define DO_TEST_1D() true
+#define PRINT_NUMBERS_1D() false
+static const uint c_itemCounts1D[] = { 10, 37, 64, 100 , 1000, 1337, 1546 };
 
 #define DO_TEST_2D() true
-#define PRINT_NUMBERS_2D() true
-static const uint2 c_imageSizes2D[] = { {3, 3} };// { 64, 64 }, { 640, 480 } };
+#define PRINT_NUMBERS_2D() false
+#define PRINT_FRAMES_2D() false
+#define MAKE_VIDEOS() (PRINT_FRAMES_2D() && true)
+static const uint2 c_imageSizes2D[] = { {16, 32} };// { 64, 64 }, { 256, 256 }, { 640, 480 } };
 
 template <typename T>
 T Frac(T f)
@@ -140,6 +145,16 @@ uint GetNearestCoprime(uint target, uint m, uint n)
 	return coprime;
 }
 
+void MakeVideo(const char* label, const uint2& dims)
+{
+	if (!MAKE_VIDEOS())
+		return;
+
+	char buffer[1024];
+	sprintf_s(buffer, "ffmpeg -framerate 60 -i out/%s_%u_%u_%%d.png -c:v libx264 -r 60 %s_%u_%u.mp4", label, dims[0], dims[1], label, dims[0], dims[1]);
+	system(buffer);
+}
+
 template <typename LAMBDA>
 void DoTest1D_Single(uint itemCount, const LAMBDA& lambda)
 {
@@ -241,7 +256,8 @@ void DoTest2D_Single(const uint2& dims, const LAMBDA& lambda)
 	int errorCount = 0;
 	for (uint index = 0; index < dims[0] * dims[1]; ++index)
 	{
-		uint2 shuffleItem = lambda(index);
+		float percent = float(index) / float(dims[0] * dims[1] - 1);
+		uint2 shuffleItem = lambda(index, percent);
 
 		if (PRINT_NUMBERS_2D())
 			printf("(%u,%u) ", shuffleItem[0], shuffleItem[1]);
@@ -284,10 +300,14 @@ void DoTest2D(const uint2& dims, std::mt19937& rng)
 	printf("========== 2D: %u x %u ==========\n\n", dims[0], dims[1]);
 
 	std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-	float2 startValue = { dist(rng), dist(rng) };
+	float3 startValue = { dist(rng), dist(rng), dist(rng) };
 
 	// R2 LDS
+	if(true)
 	{
+		std::vector<unsigned char> image(dims[0] * dims[1], 0);
+		std::vector<unsigned char> image2(dims[0] * dims[1], 0);
+
 		printf("R2 LDS:");
 
 		if (PRINT_NUMBERS_2D())
@@ -295,13 +315,10 @@ void DoTest2D(const uint2& dims, std::mt19937& rng)
 		else
 			printf(" ");
 
-		float2 valueF = startValue;
+		float2 valueF = float2{ startValue[0], startValue[1] };
 		DoTest2D_Single(dims,
-			[&valueF, &dims](uint index)
+			[&valueF, &dims, &image, &image2](uint index, float percent)
 			{
-				uint x = index % dims[0];
-				uint y = index / dims[0];
-
 				uint2 ret;
 				ret[0] = Clamp<uint>((uint)(valueF[0] * float(dims[0])), 0, dims[0] - 1);
 				ret[1] = Clamp<uint>((uint)(valueF[1] * float(dims[1])), 0, dims[1] - 1);
@@ -309,45 +326,277 @@ void DoTest2D(const uint2& dims, std::mt19937& rng)
 				valueF[0] = Frac(valueF[0] + c_R2_a1);
 				valueF[1] = Frac(valueF[1] + c_R2_a2);
 
+				image[ret[1] * dims[0] + ret[0]] = (unsigned char)Clamp(percent * 255.0f, 0.0f, 255.0f);
+				image2[ret[1] * dims[0] + ret[0]] = 255;
+
+				if (PRINT_FRAMES_2D())
+				{
+					char fileName[256];
+					sprintf_s(fileName, "out/R2_%u_%u_%u.png", dims[0], dims[1], index + 1);
+					stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image2.data(), 0);
+				}
+
 				return ret;
 			}
 		);
+
+		char fileName[256];
+		sprintf_s(fileName, "out/R2_%u_%u.png", dims[0], dims[1]);
+		stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image.data(), 0);
+
+		MakeVideo("R2", dims);
 	}
 
-	// Integer solution
+	// Integer offset solution
+	if (false)
 	{
-		uint2 coprimes;
-		coprimes[0] = GetNearestCoprime(uint(c_R2_a1 * float(dims[0]) + 0.5f), dims[0]);
-		coprimes[1] = GetNearestCoprime(uint(c_R2_a2 * float(dims[1]) + 0.5f), dims[1], coprimes[0]);
+		// Note: the idea was that the first dims[1] points of R2Int are good. so, we could do them, then do them again at a horizontal offset.
+		// We could LDS shuffle those offsets, and possibly (LDS?) shuffle the order they are done in each section.
+		// It turns out though it isn't dims[1], it's the "a1 integer" which is 48 for an image with width 64.
+		// Going to pursue a different idea
 
-		printf("R2 Int (%u, %u vs %0.2f, %0.2f):", coprimes[0], coprimes[1], c_R2_a1 * float(dims[0]), c_R2_a2 * float(dims[1]));
+		std::vector<unsigned char> image(dims[0] * dims[1], 0);
+		std::vector<unsigned char> image2(dims[0] * dims[1], 0);
+
+		uint2 R2Offset = {
+			uint(c_R2_a1 * float(dims[0]) + 0.5f),
+			uint(c_R2_a2 * float(dims[1]) + 0.5f)
+		};
+
+		uint R2OffsetFlat = R2Offset[1] * dims[0] + R2Offset[0];
+
+		uint coprime = GetNearestCoprime(R2OffsetFlat, dims[0] * dims[1]);
+
+		uint2 coprime2D = { coprime % dims[0], coprime / dims[0] };
+
+		printf("R2 Int off (%u, %u vs %0.2f, %0.2f):", coprime2D[0], coprime2D[1], c_R2_a1 * float(dims[0]), c_R2_a2 * float(dims[1]));
+
+		// NOTE: The first "next to" point happens when the 48th point occurs (frame 47).  The a1 value is 48.31.  The a2 value is 36.47.
 
 		if (PRINT_NUMBERS_2D())
 			printf("\n");
 		else
 			printf(" ");
 
-		uint2 valueI;
-		valueI[0] = Clamp<uint>((uint)(startValue[0] * float(dims[0])), 0, dims[0] - 1);
-		valueI[1] = Clamp<uint>((uint)(startValue[1] * float(dims[1])), 0, dims[1] - 1);
+		uint2 valueI2D;
+		valueI2D[0] = Clamp<uint>((uint)(startValue[0] * float(dims[0])), 0, dims[0] - 1);
+		valueI2D[1] = Clamp<uint>((uint)(startValue[1] * float(dims[1])), 0, dims[1] - 1);
+
+		uint valueI = valueI2D[1] * dims[0] + valueI2D[0];
 
 		DoTest2D_Single(dims,
-			[&valueI, &dims, coprimes](uint index)
+			[&valueI, &valueI2D, &dims, coprime, &image, &image2](uint index, float percent)
 			{
-				uint x = index % dims[0];
-				uint y = index / dims[0];
+				/*
+				if ((index % dims[1]) == 0)
+				{
+					valueI = valueI2D[1] * dims[0] + valueI2D[0];
+				}
+				*/
 
-				uint2 ret = valueI;
-				valueI[0] = (valueI[0] + coprimes[0]) % dims[0];
-				valueI[1] = (valueI[1] + coprimes[1]) % dims[1];
+				// TODO: golden ratio shuffled horizontal offset
+
+				uint2 ret = { valueI % dims[0], valueI / dims[0] };
+				valueI = (valueI + coprime) % (dims[0] * dims[1]);
+
+				image[ret[1] * dims[0] + ret[0]] = (unsigned char)Clamp(percent * 255.0f, 0.0f, 255.0f);
+				image2[ret[1] * dims[0] + ret[0]] = 255;
+
+				if (PRINT_FRAMES_2D())
+				{
+					char fileName[256];
+					sprintf_s(fileName, "out/R2IntOff_%u_%u_%u.png", dims[0], dims[1], index + 1);
+					stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image2.data(), 0);
+				}
+
 				return ret;
 			}
 		);
+
+		char fileName[256];
+		sprintf_s(fileName, "out/R2IntOff_%u_%u.png", dims[0], dims[1]);
+		stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image.data(), 0);
+
+		MakeVideo("R2IntOff", dims);
+	}
+
+	// Integer solution
+	if (false)
+	{
+		std::vector<unsigned char> image(dims[0] * dims[1], 0);
+		std::vector<unsigned char> image2(dims[0] * dims[1], 0);
+
+		uint2 R2Offset = {
+			uint(c_R2_a1 * float(dims[0]) + 0.5f),
+			uint(c_R2_a2 * float(dims[1]) + 0.5f)
+		};
+
+		uint R2OffsetFlat = R2Offset[1] * dims[0] + R2Offset[0];
+
+		uint coprime = GetNearestCoprime(R2OffsetFlat, dims[0] * dims[1]);
+
+		uint2 coprime2D = { coprime % dims[0], coprime / dims[0] };
+
+		printf("R2 Int (%u, %u vs %0.2f, %0.2f):", coprime2D[0], coprime2D[1], c_R2_a1 * float(dims[0]), c_R2_a2 * float(dims[1]));
+
+		if (PRINT_NUMBERS_2D())
+			printf("\n");
+		else
+			printf(" ");
+
+		uint2 valueI2D;
+		valueI2D[0] = Clamp<uint>((uint)(startValue[0] * float(dims[0])), 0, dims[0] - 1);
+		valueI2D[1] = Clamp<uint>((uint)(startValue[1] * float(dims[1])), 0, dims[1] - 1);
+
+		uint valueI = valueI2D[1] * dims[0] + valueI2D[0];
+
+		DoTest2D_Single(dims,
+			[&valueI, &dims, coprime, &image, &image2](uint index, float percent)
+			{
+				uint2 ret = { valueI % dims[0], valueI / dims[0] };
+				valueI = (valueI + coprime) % (dims[0] * dims[1]);
+
+				image[ret[1] * dims[0] + ret[0]] = (unsigned char)Clamp(percent * 255.0f, 0.0f, 255.0f);
+				image2[ret[1] * dims[0] + ret[0]] = 255;
+
+				if (PRINT_FRAMES_2D())
+				{
+					char fileName[256];
+					sprintf_s(fileName, "out/R2Int_%u_%u_%u.png", dims[0], dims[1], index + 1);
+					stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image2.data(), 0);
+				}
+
+				return ret;
+			}
+		);
+
+		char fileName[256];
+		sprintf_s(fileName, "out/R2Int_%u_%u.png", dims[0], dims[1]);
+		stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image.data(), 0);
+
+		MakeVideo("R2Int", dims);
+	}
+
+	// 1D Integer solution
+	if (false)
+	{
+		std::vector<unsigned char> image(dims[0] * dims[1], 0);
+		std::vector<unsigned char> image2(dims[0] * dims[1], 0);
+
+		uint coprime = GetNearestCoprime(uint(c_goldenRatioFract * float(dims[0] * dims[1]) + 0.5f), dims[0] * dims[1]);
+
+		uint2 coprime2D = { coprime % dims[0], coprime / dims[0] };
+
+		printf("GR Int (%u, %u):", coprime2D[0], coprime2D[1]);
+
+		if (PRINT_NUMBERS_2D())
+			printf("\n");
+		else
+			printf(" ");
+
+		uint2 valueI2D;
+		valueI2D[0] = Clamp<uint>((uint)(startValue[0] * float(dims[0])), 0, dims[0] - 1);
+		valueI2D[1] = Clamp<uint>((uint)(startValue[1] * float(dims[1])), 0, dims[1] - 1);
+
+		uint valueI = valueI2D[1] * dims[0] + valueI2D[0];
+
+		DoTest2D_Single(dims,
+			[&valueI, &dims, coprime, &image, &image2](uint index, float percent)
+			{
+				uint2 ret = { valueI % dims[0], valueI / dims[0] };
+				valueI = (valueI + coprime) % (dims[0] * dims[1]);
+
+				image[ret[1] * dims[0] + ret[0]] = (unsigned char)Clamp(percent * 255.0f, 0.0f, 255.0f);
+				image2[ret[1] * dims[0] + ret[0]] = 255;
+
+				if (PRINT_FRAMES_2D())
+				{
+					char fileName[256];
+					sprintf_s(fileName, "out/GRInt_%u_%u_%u.png", dims[0], dims[1], index + 1);
+					stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image2.data(), 0);
+				}
+
+				return ret;
+			}
+		);
+
+		char fileName[256];
+		sprintf_s(fileName, "out/GRInt_%u_%u.png", dims[0], dims[1]);
+		stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image.data(), 0);
+
+		MakeVideo("GRInt", dims);
+	}
+
+	// Multi Shuffle
+	if (true)
+	{
+		// Note: the idea here is we could go y=0 to height and do a 1D LDS shuffle to get each x.
+		// That happens in vertical order so we could (LDS?) shuffle the order it happens in.
+		// After that we only have 1 pixel set per row.
+		// We can do the process again with an (LDS?) shuffled x axis offset.
+
+		std::vector<unsigned char> image(dims[0] * dims[1], 0);
+		std::vector<unsigned char> image2(dims[0] * dims[1], 0);
+
+		// This irrational controls the LDS shuffle as we go vertically down the screen
+		static const float c_irrational1 = Frac(c_goldenRatio);
+		static const float c_irrational2 = Frac(std::sqrt(2.0f));
+		static const float c_irrational3 = Frac(std::sqrt(3.0f));
+
+		uint coprime1 = GetNearestCoprime(uint(c_irrational1 * float(dims[0]) + 0.5f), dims[0]);
+		uint coprime2 = GetNearestCoprime(uint(c_irrational2 * float(dims[1]) + 0.5f), dims[1]);
+		uint coprime3 = GetNearestCoprime(uint(c_irrational3 * float(dims[0]) + 0.5f), dims[0]);
+
+		printf("Multi Shuffle (%u,%u,%u vs %0.2f,%0.2f,%0.2f):", coprime1, coprime2, coprime3, c_irrational1 * float(dims[0]), c_irrational2 * float(dims[1]), c_irrational3 * float(dims[0]));
+
+		if (PRINT_NUMBERS_2D())
+			printf("\n");
+		else
+			printf(" ");
+
+		uint valueI1 = Clamp<uint>((uint)(startValue[0] * float(dims[0])), 0, dims[0] - 1);
+		uint valueI2 = Clamp<uint>((uint)(startValue[1] * float(dims[1])), 0, dims[1] - 1);
+		uint valueI3 = Clamp<uint>((uint)(startValue[2] * float(dims[1])), 0, dims[1] - 1);
+
+		DoTest2D_Single(dims,
+			[&valueI1, &valueI2, &valueI3, coprime1, coprime2, coprime3, &image, &image2, &dims](uint index, float percent)
+			{
+				if ((index % dims[0]) == 0)
+					valueI3 = (valueI3 + coprime3) % dims[0];
+
+				uint2 ret;
+				ret[0] = (valueI1 + valueI3) % dims[0];
+				ret[1] = valueI2;
+
+				valueI1 = (valueI1 + coprime1) % dims[0];
+				valueI2 = (valueI2 + coprime2) % dims[1];
+
+				image[ret[1] * dims[0] + ret[0]] = (unsigned char)Clamp(percent * 255.0f, 0.0f, 255.0f);
+				image2[ret[1] * dims[0] + ret[0]] = 255;
+
+				if (PRINT_FRAMES_2D())
+				{
+					char fileName[256];
+					sprintf_s(fileName, "out/MS_%u_%u_%u.png", dims[0], dims[1], index + 1);
+					stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image2.data(), 0);
+				}
+
+				return ret;
+			}
+		);
+
+		char fileName[256];
+		sprintf_s(fileName, "out/MS_%u_%u.png", dims[0], dims[1]);
+		stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image.data(), 0);
+
+		MakeVideo("MS", dims);
 	}
 }
 
 int main(int argc, char** argv)
 {
+	_mkdir("out");
+
 	// initialize RNG
 	std::random_device rd;
 	uint seed = (SEED() == -1) ? rd() : SEED();
@@ -357,7 +606,7 @@ int main(int argc, char** argv)
 	if (DO_TEST_COPRIMES())
 	{
 		FILE* file = nullptr;
-		fopen_s(&file, "coprimes.csv", "wb");
+		fopen_s(&file, "out/coprimes.csv", "wb");
 
 		fprintf(file, "\"itemCount\",\"goldenIndexF\",\"goldenIndexI\",\"coprime\",\"diffF\",\"diffI\"\n");
 
@@ -419,9 +668,17 @@ int main(int argc, char** argv)
 	return 0;
 }
 
+// TODO: at 640x480, MS had 50% error rate! maybe you mixed up w/h somewhere? could try a smaller non square texture 
+
 /*
 TODO:
-- work out 2D stuff? should we show some kind of image demo for it? like a digital disolve?
+
+
+Clean this up?
+think about how this should go out
+
+- ffmpeg -framerate 30 -i out/GRInt_64_64_%d.png -c:v libx264 -r 30 GRInt_64_64.mp4
+ - https://shotstack.io/learn/use-ffmpeg-to-convert-images-to-video/
 
 Blog:
 - talk about how to extend it to 2d with R2?
