@@ -20,7 +20,7 @@ typedef std::array<float, 3> float3;
 // -1 means non deterministic
 #define SEED() 0
 
-#define DO_TEST_COPRIMES() true
+#define DO_TEST_COPRIMES() false
 // When looking for coprimes near the golden ratio integer, this is the range looked at
 static const uint c_coprimeTestStart = 2;
 static const uint c_coprimeTestEnd = 1000;
@@ -29,11 +29,12 @@ static const uint c_coprimeTestEnd = 1000;
 #define PRINT_NUMBERS_1D() false
 static const uint c_itemCounts1D[] = { 10, 37, 64, 100 , 1000, 1337, 1546 };
 
-#define DO_TEST_2D() true
+#define DO_TEST_2D() false
 #define PRINT_NUMBERS_2D() false
-#define PRINT_FRAMES_2D() false
-#define MAKE_VIDEOS() (PRINT_FRAMES_2D() && true)
-static const uint2 c_imageSizes2D[] = { {16, 32} };// { 64, 64 }, { 256, 256 }, { 640, 480 } };
+#define PRINT_FRAMES_2D() true
+#define NUM_FRAMES_2D() 30  // 0 to save all frames
+#define MAKE_VIDEOS() (PRINT_FRAMES_2D() && false)
+static const uint2 c_imageSizes2D[] = { { 64, 64 }, { 128, 128 }, { 256, 256 }, { 512, 512 }, { 640, 480 } };
 
 template <typename T>
 T Frac(T f)
@@ -145,6 +146,56 @@ uint GetNearestCoprime(uint target, uint m, uint n)
 	return coprime;
 }
 
+// Find the coprime of m, n and o that is nearest to target
+uint GetNearestCoprime(uint target, uint m, uint n, uint o)
+{
+	uint coprime = 0;
+
+	uint offset = 0;
+	while (1)
+	{
+		if (offset < target)
+		{
+			coprime = target - offset;
+			if (IsCoprime(coprime, m) && IsCoprime(coprime, n) && IsCoprime(coprime, o))
+				break;
+		}
+
+		coprime = target + offset + 1;
+		if (coprime < n && IsCoprime(coprime, m) && IsCoprime(coprime, n) && IsCoprime(coprime, o))
+			break;
+
+		offset++;
+	}
+
+	return coprime;
+}
+
+// Find the coprime of m, n, o and p that is nearest to target
+uint GetNearestCoprime(uint target, uint m, uint n, uint o, uint p)
+{
+	uint coprime = 0;
+
+	uint offset = 0;
+	while (1)
+	{
+		if (offset < target)
+		{
+			coprime = target - offset;
+			if (IsCoprime(coprime, m) && IsCoprime(coprime, n) && IsCoprime(coprime, o) && IsCoprime(coprime, p))
+				break;
+		}
+
+		coprime = target + offset + 1;
+		if (coprime < n && IsCoprime(coprime, m) && IsCoprime(coprime, n) && IsCoprime(coprime, o) && IsCoprime(coprime, p))
+			break;
+
+		offset++;
+	}
+
+	return coprime;
+}
+
 void MakeVideo(const char* label, const uint2& dims)
 {
 	if (!MAKE_VIDEOS())
@@ -199,10 +250,10 @@ void DoTest1D_Single(uint itemCount, const LAMBDA& lambda)
 
 void DoTest1D(uint itemCount, std::mt19937& rng)
 {
-	printf("========== 1D: %i items ==========\n\n", itemCount);
-
 	std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 	float startValue = dist(rng);
+
+	printf("========== 1D: %i items (%0.2f startValue) ==========\n\n", itemCount, startValue);
 
 	// Golden Ratio LDS
 	{
@@ -215,7 +266,7 @@ void DoTest1D(uint itemCount, std::mt19937& rng)
 
 		float valueF = startValue;
 		DoTest1D_Single(itemCount,
-			[&valueF, itemCount] ()
+			[&valueF, itemCount]()
 			{
 				uint ret = Clamp<uint>((uint)(valueF * float(itemCount)), 0, itemCount - 1);
 				valueF = Frac(valueF + c_goldenRatioFract);
@@ -299,11 +350,13 @@ void DoTest2D(const uint2& dims, std::mt19937& rng)
 {
 	printf("========== 2D: %u x %u ==========\n\n", dims[0], dims[1]);
 
+	uint numVideoFrames = ((NUM_FRAMES_2D() > 0) ? NUM_FRAMES_2D() : dims[0] * dims[1]);
+
 	std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 	float3 startValue = { dist(rng), dist(rng), dist(rng) };
 
 	// R2 LDS
-	if(true)
+	if(false)
 	{
 		std::vector<unsigned char> image(dims[0] * dims[1], 0);
 		std::vector<unsigned char> image2(dims[0] * dims[1], 0);
@@ -317,7 +370,7 @@ void DoTest2D(const uint2& dims, std::mt19937& rng)
 
 		float2 valueF = float2{ startValue[0], startValue[1] };
 		DoTest2D_Single(dims,
-			[&valueF, &dims, &image, &image2](uint index, float percent)
+			[&valueF, &dims, &image, &image2, numVideoFrames](uint index, float percent)
 			{
 				uint2 ret;
 				ret[0] = Clamp<uint>((uint)(valueF[0] * float(dims[0])), 0, dims[0] - 1);
@@ -331,9 +384,22 @@ void DoTest2D(const uint2& dims, std::mt19937& rng)
 
 				if (PRINT_FRAMES_2D())
 				{
-					char fileName[256];
-					sprintf_s(fileName, "out/R2_%u_%u_%u.png", dims[0], dims[1], index + 1);
-					stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image2.data(), 0);
+					static int lastVideoFrame = -1;
+					int videoFrame = int(percent * float(numVideoFrames));
+
+					if (index == (dims[0] * dims[1] - 1))
+					{
+						videoFrame = numVideoFrames - 1;
+						lastVideoFrame = -1;
+					}
+
+					if (videoFrame != lastVideoFrame)
+					{
+						lastVideoFrame = videoFrame;
+						char fileName[256];
+						sprintf_s(fileName, "out/R2_%u_%u_%u.png", dims[0], dims[1], videoFrame + 1);
+						stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image2.data(), 0);
+					}
 				}
 
 				return ret;
@@ -544,8 +610,8 @@ void DoTest2D(const uint2& dims, std::mt19937& rng)
 		static const float c_irrational3 = Frac(std::sqrt(3.0f));
 
 		uint coprime1 = GetNearestCoprime(uint(c_irrational1 * float(dims[0]) + 0.5f), dims[0]);
-		uint coprime2 = GetNearestCoprime(uint(c_irrational2 * float(dims[1]) + 0.5f), dims[1]);
-		uint coprime3 = GetNearestCoprime(uint(c_irrational3 * float(dims[0]) + 0.5f), dims[0]);
+		uint coprime2 = GetNearestCoprime(uint(c_irrational2 * float(dims[1]) + 0.5f), dims[1], coprime1);
+		uint coprime3 = GetNearestCoprime(uint(c_irrational3 * float(dims[0]) + 0.5f), dims[0], dims[1], coprime1, coprime2);
 
 		printf("Multi Shuffle (%u,%u,%u vs %0.2f,%0.2f,%0.2f):", coprime1, coprime2, coprime3, c_irrational1 * float(dims[0]), c_irrational2 * float(dims[1]), c_irrational3 * float(dims[0]));
 
@@ -556,12 +622,12 @@ void DoTest2D(const uint2& dims, std::mt19937& rng)
 
 		uint valueI1 = Clamp<uint>((uint)(startValue[0] * float(dims[0])), 0, dims[0] - 1);
 		uint valueI2 = Clamp<uint>((uint)(startValue[1] * float(dims[1])), 0, dims[1] - 1);
-		uint valueI3 = Clamp<uint>((uint)(startValue[2] * float(dims[1])), 0, dims[1] - 1);
+		uint valueI3 = Clamp<uint>((uint)(startValue[2] * float(dims[0])), 0, dims[0] - 1);
 
 		DoTest2D_Single(dims,
-			[&valueI1, &valueI2, &valueI3, coprime1, coprime2, coprime3, &image, &image2, &dims](uint index, float percent)
+			[&valueI1, &valueI2, &valueI3, coprime1, coprime2, coprime3, &image, &image2, &dims, numVideoFrames](uint index, float percent)
 			{
-				if ((index % dims[0]) == 0)
+				if ((index % dims[1]) == 0)
 					valueI3 = (valueI3 + coprime3) % dims[0];
 
 				uint2 ret;
@@ -576,9 +642,22 @@ void DoTest2D(const uint2& dims, std::mt19937& rng)
 
 				if (PRINT_FRAMES_2D())
 				{
-					char fileName[256];
-					sprintf_s(fileName, "out/MS_%u_%u_%u.png", dims[0], dims[1], index + 1);
-					stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image2.data(), 0);
+					static int lastVideoFrame = -1;
+					int videoFrame = int(percent * float(numVideoFrames));
+
+					if (index == (dims[0] * dims[1] - 1))
+					{
+						videoFrame = numVideoFrames - 1;
+						lastVideoFrame = -1;
+					}
+
+					if (videoFrame != lastVideoFrame)
+					{
+						lastVideoFrame = videoFrame;
+						char fileName[256];
+						sprintf_s(fileName, "out/MS_%u_%u_%u.png", dims[0], dims[1], videoFrame + 1);
+						stbi_write_png(fileName, (int)dims[0], (int)dims[1], 1, image2.data(), 0);
+					}
 				}
 
 				return ret;
@@ -660,15 +739,24 @@ int main(int argc, char** argv)
 	// 2D Tests
 	if (DO_TEST_2D())
 	{
-		std::mt19937 rng(seed);
 		for (const uint2& size : c_imageSizes2D)
+		{
+			std::mt19937 rng(seed);
 			DoTest2D(size, rng);
+		}
 	}
 
 	return 0;
 }
 
-// TODO: at 640x480, MS had 50% error rate! maybe you mixed up w/h somewhere? could try a smaller non square texture 
+/*
+
+
+*/
+
+// TODO: multi shuffle isn't consistent quality at all resolutions
+// TODO: put more shared functionality for the 2d test (like video frames!) into the shared function
+// TODO: make your shuffle iterator take a floating point (ideally irrational!) number to drive it.  so, could use golden ratio, sqrt(2), etc.
 
 /*
 TODO:
@@ -687,6 +775,8 @@ Blog:
 - the coprime version of the golden ratio is real close to the actual thing. but drift.
 - show where the sequnces diverge! lil bit of drift due to rounding to integer, but we want that cause it's a coprime generator.
 - mention that you are not going to be analzying the quality of the sequence, but you can see it's very, very similar to the pure golden ratio one
+
+- for 2D, show the video of R2 as "pretty optimal, that's what we are aiming for", but we want it to not have any repeats since it's a shuffle.
 
 find marc reynolds post about golden ratio integer LDS thing.
 and link this too: ttps://mastodon.gamedev.place/@demofox/112452866510781822
