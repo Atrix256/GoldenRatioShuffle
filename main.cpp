@@ -4,30 +4,26 @@
 #include <cmath>
 #include <random>
 #include <vector>
-#include <array>
 #include <direct.h>
 
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb/stb_image_write.h"
+#include "LDShuffle.h"
 
 typedef unsigned int uint;
 
-typedef std::array<uint, 2> uint2;
-
-typedef std::array<float, 2> float2;
-typedef std::array<float, 3> float3;
-
-// -1 means non deterministic
-#define SEED() 0
+// -1 means random seed
+// Any other value is used as a deterministic seed
+#define SEED() -1
 
 #define DO_TEST_COPRIMES() false
-// When looking for coprimes near the golden ratio integer, this is the range looked at
 static const uint c_coprimeTestStart = 2;
 static const uint c_coprimeTestEnd = 1000;
 
+#define DO_TEST_INVERSION() true
+static const uint c_inversionTestItemCount = 65536;
+
 #define DO_TEST() true
-#define PRINT_NUMBERS() false
-static const uint c_itemCounts[] = { 10, 37, 64, 100 , 1000, 1337, 1546 };
+#define PRINT_NUMBERS() true
+static const uint c_itemCounts[] = { 16 };// , 64, 37, 64, 100, 1000, 1337, 1546 };
 
 template <typename T>
 T Frac(T f)
@@ -49,108 +45,9 @@ T Clamp(T value, T themin, T themax)
 		return value;
 }
 
-// From https://blog.demofox.org/2015/01/24/programmatically-calculating-gcd-and-lcm/
-uint CalculateGCD(uint smaller, uint larger)
+static inline uint ExtendedEuclidianAlgorithm(int smaller, int larger, int& s, int& t)
 {
-	// make sure A <= B before starting
-	if (larger < smaller)
-		std::swap(smaller, larger);
-
-	// loop
-	while (1)
-	{
-		// if the remainder of larger / smaller is 0, they are the same
-		// so return smaller as the GCD
-		uint remainder = larger % smaller;
-		if (remainder == 0)
-			return smaller;
-
-		// otherwise, the new larger number is the old smaller number, and
-		// the new smaller number is the remainder
-		larger = smaller;
-		smaller = remainder;
-	}
-}
-
-// From https://blog.demofox.org/2015/09/10/modular-multiplicative-inverse/
-unsigned int ExtendedEuclidianAlgorithm(int smaller, int larger, int& s, int& t)
-{
-	// make sure A <= B before starting
-	bool swapped = false;
-	if (larger < smaller)
-	{
-		swapped = true;
-		std::swap(smaller, larger);
-	}
-
-	// set up our storage for the loop.  We only need the last two values so will
-	// just use a 2 entry circular buffer for each data item
-	std::array<int, 2> remainders = { larger, smaller };
-	std::array<int, 2> ss = { 1, 0 };
-	std::array<int, 2> ts = { 0, 1 };
-	int indexNeg2 = 0;
-	int indexNeg1 = 1;
-
-	// loop
-	while (1)
-	{
-		// calculate our new quotient and remainder
-		int newQuotient = remainders[indexNeg2] / remainders[indexNeg1];
-		int newRemainder = remainders[indexNeg2] - newQuotient * remainders[indexNeg1];
-
-		// if our remainder is zero we are done.
-		if (newRemainder == 0)
-		{
-			// return our s and t values as well as the quotient as the GCD
-			s = ss[indexNeg1];
-			t = ts[indexNeg1];
-			if (swapped)
-				std::swap(s, t);
-			return remainders[indexNeg1];
-		}
-
-		// calculate this round's s and t
-		int newS = ss[indexNeg2] - newQuotient * ss[indexNeg1];
-		int newT = ts[indexNeg2] - newQuotient * ts[indexNeg1];
-
-		// store our values for the next iteration
-		remainders[indexNeg2] = newRemainder;
-		ss[indexNeg2] = newS;
-		ts[indexNeg2] = newT;
-
-		// move to the next iteration
-		std::swap(indexNeg1, indexNeg2);
-	}
-}
-
-bool IsCoprime(uint A, uint B)
-{
-	return CalculateGCD(A, B) == 1;
-}
-
-// Find the coprime of n that is nearest to target
-uint GetNearestCoprime(uint target, uint n)
-{
-	uint coprime = 0;
-
-	uint offset = 0;
-	while (1)
-	{
-		if (offset < target)
-		{
-			coprime = target - offset;
-			if (IsCoprime(coprime, n))
-				break;
-		}
-
-		coprime = target + offset + 1;
-		if (coprime < n && IsCoprime(coprime, n))
-			break;
-
-		offset++;
-	}
-
-	return coprime;
+	return 0;
 }
 
 template <typename LAMBDA>
@@ -224,23 +121,21 @@ void DoTest(uint itemCount, std::mt19937& rng)
 
 	// Integer solution
 	{
-		uint coprime = GetNearestCoprime(uint(c_goldenRatioFract * float(itemCount) + 0.5f), itemCount);
+		uint shuffleSeed = Clamp<uint>((uint)(startValue * float(itemCount)), 0, itemCount - 1);
 
-		printf("GR INT (%u vs %0.2f):", coprime, c_goldenRatioFract * float(itemCount));
+		LDShuffle shuffle(itemCount, shuffleSeed);
+
+		printf("GR INT (%u vs %0.2f):", shuffle.GetCoprime(), c_goldenRatioFract * float(itemCount));
 
 		if (PRINT_NUMBERS())
 			printf("\n");
 		else
 			printf(" ");
 
-		uint valueI = Clamp<uint>((uint)(startValue * float(itemCount)), 0, itemCount - 1);
-
 		DoTest_Single(itemCount,
-			[&valueI, itemCount, coprime]()
+			[&shuffle]()
 			{
-				uint ret = valueI;
-				valueI = (valueI + coprime) % itemCount;
-				return ret;
+				return shuffle.Next();
 			}
 		);
 	}
@@ -269,7 +164,9 @@ int main(int argc, char** argv)
 		for (uint itemCount = c_coprimeTestStart; itemCount < c_coprimeTestEnd; ++itemCount)
 		{
 			uint target = uint(c_goldenRatioFract * float(itemCount) + 0.5f);
-			uint coprime = GetNearestCoprime(target, itemCount);
+
+			LDShuffle shuffle(itemCount, 0);
+			uint coprime = shuffle.GetCoprime();
 
 			uint diff = (target >= coprime) ? target - coprime : coprime - target;
 
@@ -300,6 +197,35 @@ int main(int argc, char** argv)
 		fclose(file);
 	}
 
+	// Inversion test
+	if (DO_TEST_INVERSION())
+	{
+		std::mt19937 rng(seed);
+		std::uniform_int_distribution<uint> dist(0, c_inversionTestItemCount - 1);
+		LDShuffle shuffle(c_inversionTestItemCount, dist(rng));
+		for (uint i = 0; i < c_inversionTestItemCount; ++i)
+		{
+			uint valueNext = shuffle.Next();
+			uint value = shuffle.RandomAccess(i);
+
+			if (value != valueNext)
+			{
+				printf("Inversion Test Error: iterative vs random access values mismatched: [%u] %u vs %u.\n", i, valueNext, value);
+				return 1;
+			}
+
+			uint index = shuffle.GetIndex(value);
+			if (index != i)
+			{
+				printf("Inversion Test Error: [%u] Inversion failed.\n", i);
+				return 1;
+			}
+
+			//printf("[%u] %u\n", index, value);
+		}
+		printf("Inversion test passed!\n\n");
+	}
+
 	// Shuffle Test
 	if (DO_TEST())
 	{
@@ -313,5 +239,4 @@ int main(int argc, char** argv)
 	return 0;
 }
 
-// TODO: need to make a fully featured 1d shuffle iterator with random access and inversion
 // TODO: show average of shuffle sequence, vs white noise, to show quality

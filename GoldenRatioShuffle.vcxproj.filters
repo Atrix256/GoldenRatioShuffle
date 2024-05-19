@@ -12,5 +12,6 @@
     <ClInclude Include="stb\stb_image_write.h">
       <Filter>stb</Filter>
     </ClInclude>
+    <ClInclude Include="LDShuffle.h" />
   </ItemGroup>
 </Project>
