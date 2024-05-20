@@ -39,7 +39,7 @@ public:
 
 	uint GetIndex(uint value)
 	{
-		int s, t;
+		uint s, t;
 		uint GCD = ExtendedEuclidianAlgorithm(m_coprime, m_numItems, s, t);
 
 		uint stepsToValue = (t * value) % m_numItems;
@@ -102,7 +102,7 @@ private:
 	}
 
 	// From https://blog.demofox.org/2015/09/10/modular-multiplicative-inverse/
-	static inline uint ExtendedEuclidianAlgorithm(int smaller, int larger, int& s, int& t)
+	static inline uint ExtendedEuclidianAlgorithm(uint smaller, uint larger, uint& s, uint& t)
 	{
 		// make sure A <= B before starting
 		bool swapped = false;
@@ -114,18 +114,18 @@ private:
 
 		// set up our storage for the loop.  We only need the last two values so will
 		// just use a 2 entry circular buffer for each data item
-		int remainders[2] = {larger, smaller};
-		int ss[2] = {1, 0};
-		int ts[2] = {0, 1};
-		int indexNeg2 = 0;
-		int indexNeg1 = 1;
+		uint remainders[2] = {larger, smaller};
+		uint ss[2] = {1, 0};
+		uint ts[2] = {0, 1};
+		uint indexNeg2 = 0;
+		uint indexNeg1 = 1;
 
 		// loop
 		while (1)
 		{
 			// calculate our new quotient and remainder
-			int newQuotient = remainders[indexNeg2] / remainders[indexNeg1];
-			int newRemainder = remainders[indexNeg2] - newQuotient * remainders[indexNeg1];
+			uint newQuotient = remainders[indexNeg2] / remainders[indexNeg1];
+			uint newRemainder = remainders[indexNeg2] - newQuotient * remainders[indexNeg1];
 
 			// if our remainder is zero we are done.
 			if (newRemainder == 0)

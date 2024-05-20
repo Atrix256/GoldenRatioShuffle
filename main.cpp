@@ -18,8 +18,12 @@ typedef unsigned int uint;
 static const uint c_coprimeTestStart = 2;
 static const uint c_coprimeTestEnd = 1000;
 
-#define DO_TEST_INVERSION() true
+#define DO_TEST_INVERSION() false
 static const uint c_inversionTestItemCount = 65536;
+
+#define DO_TEST_CONVERGENCE() false
+static const uint c_convergenceTestItemCount = 10000;
+static const uint c_convergenceTestTestCount = 1000;
 
 #define DO_TEST() true
 #define PRINT_NUMBERS() true
@@ -43,6 +47,11 @@ T Clamp(T value, T themin, T themax)
 		return themax;
 	else
 		return value;
+}
+
+float Lerp(float A, float B, float t)
+{
+	return A * (1.0f - t) + B * t;
 }
 
 static inline uint ExtendedEuclidianAlgorithm(int smaller, int larger, int& s, int& t)
@@ -226,6 +235,55 @@ int main(int argc, char** argv)
 		printf("Inversion test passed!\n\n");
 	}
 
+	// Convergence test
+	if (DO_TEST_CONVERGENCE())
+	{
+		std::mt19937 rng(seed);
+		std::uniform_int_distribution<uint> dist(0, c_convergenceTestItemCount - 1);
+
+		std::vector<uint> shuffled(c_convergenceTestItemCount);
+		for (uint i = 0; i < c_convergenceTestItemCount; ++i)
+			shuffled[i] = i;
+
+		// Do multiple tests and average the results
+		std::vector<float> convergenceLDS(c_convergenceTestItemCount, 0.0f);
+		std::vector<float> convergenceWhite(c_convergenceTestItemCount, 0.0f);
+		for (uint testIndex = 0; testIndex < c_convergenceTestTestCount; ++testIndex)
+		{
+			// Init the low discrepancy shuffler with a random starting seed
+			LDShuffle shuffle(c_convergenceTestItemCount, dist(rng));
+
+			// Make the white noise shuffled array
+			std::shuffle(shuffled.begin(), shuffled.end(), rng);
+
+			float convergedValueLDS = 0.0f;
+			float convergedValueWhite = 0.0f;
+			for (uint i = 0; i < c_convergenceTestItemCount; ++i)
+			{
+				float valueLDS = float(shuffle.Next()) / float(c_convergenceTestItemCount - 1) - 0.5f;
+				float valueWhite = float(shuffled[i]) / float(c_convergenceTestItemCount - 1) - 0.5f;
+
+				convergedValueLDS = Lerp(convergedValueLDS, valueLDS, 1.0f / float(i + 1));
+				convergedValueWhite = Lerp(convergedValueWhite, valueWhite, 1.0f / float(i + 1));
+
+				convergenceLDS[i] = Lerp(convergenceLDS[i], convergedValueLDS, 1.0f / float(testIndex + 1));
+				convergenceWhite[i] = Lerp(convergenceWhite[i], convergedValueWhite, 1.0f / float(testIndex + 1));
+			}
+		}
+
+		// Write the results out
+		{
+			FILE* file = nullptr;
+			fopen_s(&file, "out/convergence.csv", "wb");
+			fprintf(file, "\"itemCount\",\"LDShuffle\",\"Shuffle\"\n");
+
+			for (uint i = 0; i < c_convergenceTestItemCount; ++i)
+				fprintf(file, "\"%u\",\"%f\",\"%f\"\n", i, std::abs(convergenceLDS[i]), std::abs(convergenceWhite[i]));
+
+			fclose(file);
+		}
+	}
+
 	// Shuffle Test
 	if (DO_TEST())
 	{
@@ -238,5 +296,3 @@ int main(int argc, char** argv)
 
 	return 0;
 }
-
-// TODO: show average of shuffle sequence, vs white noise, to show quality
