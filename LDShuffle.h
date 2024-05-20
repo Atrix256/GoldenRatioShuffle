@@ -23,6 +23,10 @@ public:
 		, m_currentItem(seed)
 	{
 		CalculateCoprime(irrational);
+
+		// Calculate "steps to unity" which is needed for inversion
+		uint s;
+		uint GCD = ExtendedEuclidianAlgorithm(m_coprime, m_numItems, s, m_stepsToUnity);
 	}
 
 	uint RandomAccess(uint index)
@@ -39,11 +43,8 @@ public:
 
 	uint GetIndex(uint value)
 	{
-		uint s, t;
-		uint GCD = ExtendedEuclidianAlgorithm(m_coprime, m_numItems, s, t);
-
-		uint stepsToValue = (t * value) % m_numItems;
-		uint stepsToSeed = (t * m_seed) % m_numItems;
+		uint stepsToValue = (m_stepsToUnity * value) % m_numItems;
+		uint stepsToSeed = (m_stepsToUnity * m_seed) % m_numItems;
 
 		return (stepsToValue + m_numItems - stepsToSeed) % m_numItems;
 	}
@@ -157,6 +158,7 @@ private:
 	uint m_seed = 0;
 
 	uint m_coprime = 0;
+	uint m_stepsToUnity = 0;
 
 	uint m_currentItem = 0;
 };
