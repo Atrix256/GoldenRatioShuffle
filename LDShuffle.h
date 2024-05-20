@@ -29,11 +29,6 @@ public:
 		uint GCD = ExtendedEuclidianAlgorithm(m_coprime, m_numItems, s, m_stepsToUnity);
 	}
 
-	uint RandomAccess(uint index)
-	{
-		return ((index % m_numItems) * m_coprime + m_seed) % m_numItems;
-	}
-
 	uint Next()
 	{
 		uint ret = m_currentItem;
@@ -41,7 +36,12 @@ public:
 		return ret;
 	}
 
-	uint GetIndex(uint value)
+	uint GetValueAtIndex(uint index)
+	{
+		return ((index % m_numItems) * m_coprime + m_seed) % m_numItems;
+	}
+
+	uint GetIndexOfValue(uint value)
 	{
 		uint stepsToValue = (m_stepsToUnity * value) % m_numItems;
 		uint stepsToSeed = (m_stepsToUnity * m_seed) % m_numItems;

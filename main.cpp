@@ -18,7 +18,7 @@ typedef unsigned int uint;
 static const uint c_coprimeTestStart = 2;
 static const uint c_coprimeTestEnd = 1000;
 
-#define DO_TEST_INVERSION() false
+#define DO_TEST_INVERSION() true
 static const uint c_inversionTestItemCount = 65536;
 
 #define DO_TEST_CONVERGENCE() false
@@ -215,7 +215,7 @@ int main(int argc, char** argv)
 		for (uint i = 0; i < c_inversionTestItemCount; ++i)
 		{
 			uint valueNext = shuffle.Next();
-			uint value = shuffle.RandomAccess(i);
+			uint value = shuffle.GetValueAtIndex(i);
 
 			if (value != valueNext)
 			{
@@ -223,7 +223,7 @@ int main(int argc, char** argv)
 				return 1;
 			}
 
-			uint index = shuffle.GetIndex(value);
+			uint index = shuffle.GetIndexOfValue(value);
 			if (index != i)
 			{
 				printf("Inversion Test Error: [%u] Inversion failed.\n", i);
