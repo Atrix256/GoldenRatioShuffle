@@ -19,8 +19,8 @@ public:
 
 	LDShuffle(uint numItems, uint seed, float irrational = c_goldenRatio)
 		: m_numItems(numItems)
-		, m_seed(seed)
-		, m_currentItem(seed)
+		, m_seed(seed % numItems)
+		, m_currentItem(seed % numItems)
 	{
 		CalculateCoprime(irrational);
 
